@@ -5,6 +5,7 @@ import datetime as dt
 from unittest.mock import AsyncMock
 
 import pytest
+from pylivoltek.rest import ApiException
 
 from custom_components.livoltek.coordinator import LivoltekDataUpdateCoordinator
 
@@ -148,3 +149,27 @@ async def test_async_update_data_reuses_cached_access_token(
     assert get_api_client.await_args_list[0].args == (livoltek_entry, None)
     assert get_api_client.await_args_list[1].args == (livoltek_entry, "first-token")
     assert coordinator.access_token == "second-token"
+
+
+@pytest.mark.asyncio
+async def test_async_update_data_drops_token_on_unauthorized(
+    hass,
+    livoltek_entry,
+    monkeypatch,
+) -> None:
+    """A 401 from the API must force a fresh login on the next poll."""
+    coordinator = LivoltekDataUpdateCoordinator(hass, livoltek_entry)
+
+    monkeypatch.setattr(
+        "custom_components.livoltek.coordinator.async_get_api_client",
+        AsyncMock(return_value=(object(), "stale-token")),
+    )
+    monkeypatch.setattr(
+        "custom_components.livoltek.coordinator.async_get_site",
+        AsyncMock(side_effect=ApiException(status=401, reason="Please login")),
+    )
+
+    with pytest.raises(ApiException):
+        await coordinator._async_update_data()
+
+    assert coordinator.access_token is None

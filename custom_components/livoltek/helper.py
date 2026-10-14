@@ -6,8 +6,8 @@ import asyncio
 from typing import Any
 
 import aiohttp
+import jwt
 
-from homeassistant.auth.jwt_wrapper import PyJWT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.const import CONF_API_KEY
@@ -41,14 +41,23 @@ from .const import (
 )
 
 
-def validate_jwt(jwt: str) -> bool:
-    """Validate a JWT token."""
-    try:
-        PyJWT(jwt)
-        return True
-    except Exception as e:
-        LOGGER.info("Invalid JWT token: %s", e)
+def validate_jwt(token: str | None) -> bool:
+    """Return True if token is a well-formed, unexpired JWT.
+
+    The signature cannot be checked locally, so only the structure and the
+    expiry are verified. An empty token is never valid.
+    """
+    if not token:
         return False
+    try:
+        jwt.decode(
+            token,
+            options={"verify_signature": False, "verify_exp": True},
+        )
+    except jwt.PyJWTError as e:
+        LOGGER.debug("Cached Livoltek token is not usable: %s", e)
+        return False
+    return True
 
 
 async def async_get_login_token(host: str, api_key: str, secuid: str) -> str:
