@@ -1,9 +1,11 @@
 """Tests for Livoltek helper functions."""
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import jwt
 import pytest
 
 from homeassistant.const import CONF_API_KEY
@@ -21,20 +23,24 @@ from custom_components.livoltek.const import (
 from .common import build_device_details
 
 
-def test_validate_jwt_returns_true_for_decodable_token(monkeypatch) -> None:
-    """A decodable JWT should be considered valid."""
-    decode = Mock(return_value={"exp": 1})
-    monkeypatch.setattr(helper, "PyJWT", decode)
+def test_validate_jwt_returns_true_for_unexpired_token() -> None:
+    """An unexpired JWT should be considered valid."""
+    token = jwt.encode({"exp": int(time.time()) + 3600}, "secret", algorithm="HS256")
 
-    assert helper.validate_jwt({"header": "payload"}) is True
-    decode.assert_called_once_with({"header": "payload"})
+    assert helper.validate_jwt(token) is True
 
 
-def test_validate_jwt_returns_false_on_decode_error(monkeypatch) -> None:
-    """Any JWT decoding error should invalidate the token."""
-    monkeypatch.setattr(helper, "PyJWT", Mock(side_effect=ValueError("bad token")))
+def test_validate_jwt_returns_false_for_expired_token() -> None:
+    """An expired JWT must trigger a new login."""
+    token = jwt.encode({"exp": int(time.time()) - 60}, "secret", algorithm="HS256")
 
-    assert helper.validate_jwt("bad-token") is False
+    assert helper.validate_jwt(token) is False
+
+
+@pytest.mark.parametrize("token", ["", None, "bad-token"])
+def test_validate_jwt_returns_false_for_missing_or_malformed_token(token) -> None:
+    """Empty or malformed tokens must never be reused."""
+    assert helper.validate_jwt(token) is False
 
 
 @pytest.mark.asyncio

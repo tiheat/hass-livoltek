@@ -15,6 +15,7 @@ from .const import (
     CONF_SITE_ID,
 )
 
+from pylivoltek.rest import ApiException
 from requests.structures import CaseInsensitiveDict
 from .helper import (
     async_get_api_client,
@@ -52,6 +53,16 @@ class LivoltekDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Fetch system status from Livoltek."""
+        try:
+            await self._async_fetch_data()
+        except ApiException as e:
+            if e.status == 401:
+                # Force a fresh login on the next poll.
+                self.access_token = None
+            raise
+
+    async def _async_fetch_data(self):
+        """Fetch all Livoltek endpoints with a valid token."""
         api_result = await async_get_api_client(self.config_entry, self.access_token)
         api = api_result[0]
         self.access_token = api_result[1]
